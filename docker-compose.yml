@@ -1,0 +1,11 @@
+# docker-compose.yml — Feature 4: Replicación Asíncrona a NoSQL
+#
+# HU-50: archivo inicial, sin servicios todavía.
+# Se completa en las siguientes HU con:
+#   - mysql-origen : instancia MySQL de solo lectura, origen de los datos (HU-55)
+#   - dynamodb     : Amazon DynamoDB Local con su tabla de resumen (HU-52)
+#   - sync-service : endpoints Generate y GetJob, GenerarJob y Thread (HU-51, 53, 54, 55, 56, 57)
+#
+# Las variables se leen del archivo .env (ver .env.example).
+
+services: {}
