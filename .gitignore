@@ -1,0 +1,60 @@
+#-------------------------
+# Entorno y secretos (nunca versionar)
+#-------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+#-------------------------
+# Java / Maven (sync-service/)
+#-------------------------
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+hs_err_pid*
+
+#-------------------------
+# Docker y datos locales
+#-------------------------
+docker-compose.override.yml
+db/origen/data/
+dynamodb/data/
+*.dump
+*.sql.gz
+
+#-------------------------
+# Logs y temporales
+#-------------------------
+*.log
+logs/
+tmp/
+*.tmp
+
+#-------------------------
+# IDEs
+#-------------------------
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.classpath
+.project
+.settings/
+.factorypath
+.sts4/
+
+#-------------------------
+# Sistema operativo
+#-------------------------
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*~
