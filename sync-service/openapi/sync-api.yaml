@@ -1,0 +1,309 @@
+openapi: 3.0.3
+info:
+  title: sync-service — Replicación Asíncrona a NoSQL — Oficina del Agua
+  version: 1.0.0
+  description: |
+    Contrato del servicio de la **Feature 4 (Replicación Asíncrona a NoSQL)**.
+
+    Copia un **resumen** de la Oficina del Agua (**clientes, consumos y pagos**) desde la
+    instancia MySQL hacia **Amazon DynamoDB**, sin hacer esperar a quien lo pide.
+
+    **Cómo funciona**
+    1. `POST /api/sync/resumen` (**Generate**) crea un job y responde de inmediato
+       `202 Accepted` con su `jobId`. No espera a que termine la replicación.
+    2. Un **Thread en segundo plano** lee de la instancia MySQL, calcula la diferencia contra
+       DynamoDB y aplica la replicación.
+    3. `GET /api/sync/jobs/{jobId}` (**GetJob**) informa en qué estado va el job.
+
+    **Reglas del servicio**
+    - Lee de la instancia MySQL únicamente con un usuario de **solo lectura**.
+    - Solo aplica **upserts** (insertar o actualizar) en DynamoDB. **Nunca borra**: un registro
+      que desapareció del origen se conserva en el destino.
+    - Ejecutarlo dos veces seguidas con los mismos datos da el mismo resultado (la segunda vez
+      todo queda como `sinCambios`).
+    - Un fallo de la replicación deja el job en `FALLIDO` con su motivo, y no afecta a la
+      instancia MySQL.
+    - Los endpoints requieren una API key (cabecera `X-API-Key`).
+
+    **Estados del job**
+
+    | Estado | Significado |
+    |---|---|
+    | `PENDIENTE` | El job fue registrado y espera a que el Thread lo tome. |
+    | `EN_PROGRESO` | El Thread está leyendo, comparando y replicando. |
+    | `COMPLETADO` | La replicación terminó correctamente. |
+    | `FALLIDO` | La replicación terminó con un error; ver `motivoFallo`. |
+
+    Transiciones permitidas: `PENDIENTE` → `EN_PROGRESO` → `COMPLETADO` o `FALLIDO`.
+
+    **Contrato primero:** este archivo es la fuente de verdad. Las interfaces y los DTOs de Java
+    se generan con `openapi-generator-maven-plugin`; el equipo implementa las interfaces.
+servers:
+  - url: http://localhost:8083
+    description: Local (Docker Compose)
+security:
+  - ApiKeyAuth: []
+tags:
+  - name: Sincronizacion
+    description: Iniciar una replicación y consultar el estado de sus jobs
+
+paths:
+  /api/sync/resumen:
+    post:
+      tags: [Sincronizacion]
+      operationId: iniciarSincronizacion
+      summary: Iniciar la replicación del resumen (Generate)
+      description: |
+        Registra un job de replicación en estado `PENDIENTE`, lo entrega al Thread de segundo
+        plano y **responde de inmediato** con `202 Accepted`. La replicación no ha terminado
+        cuando llega esta respuesta: para saber cómo va, consultar el job con
+        `GET /api/sync/jobs/{jobId}` (la ruta también viene en la cabecera `Location`).
+
+        No recibe cuerpo. Cada llamada crea un job nuevo.
+      responses:
+        202:
+          description: Job registrado. La replicación sigue en segundo plano.
+          headers:
+            Location:
+              description: Ruta para consultar el estado del job.
+              schema:
+                type: string
+                example: /api/sync/jobs/3f2b8c1e-5d4a-4b7e-9c61-0a1d2e3f4a5b
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobCreado"
+              example:
+                jobId: 3f2b8c1e-5d4a-4b7e-9c61-0a1d2e3f4a5b
+                estado: PENDIENTE
+                creadoEn: "2026-10-19T21:40:00Z"
+        401:
+          $ref: "#/components/responses/NoAutorizado"
+        500:
+          $ref: "#/components/responses/ErrorInterno"
+
+  /api/sync/jobs/{jobId}:
+    get:
+      tags: [Sincronizacion]
+      operationId: obtenerEstadoJob
+      summary: Consultar el estado de un job (GetJob)
+      description: |
+        Devuelve el estado del job, sus fechas y, cuando ya hay resultado, cuántos registros se
+        insertaron, actualizaron o quedaron sin cambios.
+
+        - `PENDIENTE`: solo trae `jobId`, `estado` y `creadoEn`.
+        - `EN_PROGRESO`: agrega `iniciadoEn`.
+        - `COMPLETADO`: agrega `finalizadoEn` y `registros` (con su `detalle`).
+        - `FALLIDO`: agrega `finalizadoEn` y `motivoFallo`.
+
+        Los campos que todavía no aplican **no vienen** en la respuesta (o vienen en `null`).
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: Identificador del job, el que devolvió Generate.
+          schema:
+            type: string
+            format: uuid
+          example: 3f2b8c1e-5d4a-4b7e-9c61-0a1d2e3f4a5b
+      responses:
+        200:
+          description: Estado del job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobEstado"
+              examples:
+                enProgreso:
+                  summary: Job en ejecución
+                  value:
+                    jobId: 3f2b8c1e-5d4a-4b7e-9c61-0a1d2e3f4a5b
+                    estado: EN_PROGRESO
+                    creadoEn: "2026-10-19T21:40:00Z"
+                    iniciadoEn: "2026-10-19T21:40:01Z"
+                completado:
+                  summary: Job terminado correctamente
+                  value:
+                    jobId: 3f2b8c1e-5d4a-4b7e-9c61-0a1d2e3f4a5b
+                    estado: COMPLETADO
+                    creadoEn: "2026-10-19T21:40:00Z"
+                    iniciadoEn: "2026-10-19T21:40:01Z"
+                    finalizadoEn: "2026-10-19T21:40:04Z"
+                    registros:
+                      insertados: 12
+                      actualizados: 3
+                      sinCambios: 48
+                    detalle:
+                      clientes: { insertados: 2, actualizados: 1, sinCambios: 23 }
+                      consumos: { insertados: 6, actualizados: 2, sinCambios: 25 }
+                      pagos: { insertados: 4, actualizados: 0, sinCambios: 0 }
+                fallido:
+                  summary: Job que terminó con error
+                  value:
+                    jobId: 3f2b8c1e-5d4a-4b7e-9c61-0a1d2e3f4a5b
+                    estado: FALLIDO
+                    creadoEn: "2026-10-19T21:40:00Z"
+                    iniciadoEn: "2026-10-19T21:40:01Z"
+                    finalizadoEn: "2026-10-19T21:40:02Z"
+                    motivoFallo: No se pudo conectar con DynamoDB.
+        400:
+          description: El jobId no tiene formato de UUID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorRespuesta"
+              example:
+                codigo: JOB_ID_INVALIDO
+                mensaje: El jobId debe ser un UUID.
+                fecha: "2026-10-19T21:40:00Z"
+        401:
+          $ref: "#/components/responses/NoAutorizado"
+        404:
+          description: No existe un job con ese jobId.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorRespuesta"
+              example:
+                codigo: JOB_NO_ENCONTRADO
+                mensaje: No se encontró un job con ese jobId.
+                fecha: "2026-10-19T21:40:00Z"
+        500:
+          $ref: "#/components/responses/ErrorInterno"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Clave que autoriza a quien inicia o consulta una sincronización.
+
+  responses:
+    NoAutorizado:
+      description: Falta la API key o no es válida.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorRespuesta"
+          example:
+            codigo: NO_AUTORIZADO
+            mensaje: Falta la API key o no es válida.
+            fecha: "2026-10-19T21:40:00Z"
+    ErrorInterno:
+      description: Error interno. No incluye detalles técnicos.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorRespuesta"
+          example:
+            codigo: ERROR_INTERNO
+            mensaje: No se pudo completar la solicitud. Intente más tarde.
+            fecha: "2026-10-19T21:40:00Z"
+
+  schemas:
+    EstadoJob:
+      type: string
+      description: Estado del job de replicación.
+      enum:
+        - PENDIENTE
+        - EN_PROGRESO
+        - COMPLETADO
+        - FALLIDO
+
+    JobCreado:
+      type: object
+      description: Respuesta inmediata de Generate.
+      required: [jobId, estado, creadoEn]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+          description: Identificador para consultar el job con GetJob.
+        estado:
+          $ref: "#/components/schemas/EstadoJob"
+        creadoEn:
+          type: string
+          format: date-time
+
+    ConteoRegistros:
+      type: object
+      description: Resultado de comparar un conjunto de registros contra el destino.
+      required: [insertados, actualizados, sinCambios]
+      properties:
+        insertados:
+          type: integer
+          minimum: 0
+          description: Registros nuevos, que no existían en DynamoDB.
+        actualizados:
+          type: integer
+          minimum: 0
+          description: Registros que existían pero cambiaron en el origen.
+        sinCambios:
+          type: integer
+          minimum: 0
+          description: Registros que ya estaban iguales en el destino.
+
+    DetalleRegistros:
+      type: object
+      description: El resumen desglosado por tipo de dato.
+      required: [clientes, consumos, pagos]
+      properties:
+        clientes:
+          $ref: "#/components/schemas/ConteoRegistros"
+        consumos:
+          $ref: "#/components/schemas/ConteoRegistros"
+        pagos:
+          $ref: "#/components/schemas/ConteoRegistros"
+
+    JobEstado:
+      type: object
+      description: Estado de un job de replicación.
+      required: [jobId, estado, creadoEn]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        estado:
+          $ref: "#/components/schemas/EstadoJob"
+        creadoEn:
+          type: string
+          format: date-time
+          description: Cuándo se registró el job.
+        iniciadoEn:
+          type: string
+          format: date-time
+          description: Cuándo el Thread empezó a replicar. Solo desde `EN_PROGRESO`.
+        finalizadoEn:
+          type: string
+          format: date-time
+          description: Cuándo terminó, con éxito o con error. Solo en `COMPLETADO` y `FALLIDO`.
+        registros:
+          $ref: "#/components/schemas/ConteoRegistros"
+        detalle:
+          $ref: "#/components/schemas/DetalleRegistros"
+        motivoFallo:
+          type: string
+          description: Por qué falló. Solo en `FALLIDO`; sin detalles técnicos internos.
+
+    CodigoError:
+      type: string
+      description: Código estable para que quien llama decida qué hacer.
+      enum:
+        - JOB_ID_INVALIDO
+        - JOB_NO_ENCONTRADO
+        - NO_AUTORIZADO
+        - ERROR_INTERNO
+
+    ErrorRespuesta:
+      type: object
+      required: [codigo, mensaje, fecha]
+      properties:
+        codigo:
+          $ref: "#/components/schemas/CodigoError"
+        mensaje:
+          type: string
+          description: Texto legible, sin detalles técnicos internos.
+        fecha:
+          type: string
+          format: date-time
