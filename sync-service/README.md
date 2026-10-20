@@ -5,11 +5,21 @@ Servicio que replica el resumen de la instancia MySQL (solo lectura) hacia Amazo
 | HU | Qué se construye aquí |
 |---|---|
 | HU-51 | Contrato OpenAPI (`openapi/`), generación de interfaces y DTOs, Swagger UI (implementado) |
-| HU-53 | `POST /api/sync/resumen` (Generate) y creación del GenerarJob, respuesta 202 + `jobId` |
+| HU-53 | `POST /api/sync/resumen` (Generate) y creación del GenerarJob, respuesta 202 + `jobId`, API key (implementado) |
 | HU-54 | Thread en segundo plano y estados del job |
 | HU-55 | Diff entre la instancia MySQL y DynamoDB (nuevos, modificados, iguales) |
 | HU-56 | Upsert sin borrar en DynamoDB |
 | HU-57 | `GET /api/sync/jobs/{jobId}` (GetJob) |
+
+## Requisitos
+
+- **JDK 21.** El proyecto compila con `release 21`. Con un JDK más nuevo (por ejemplo el 25) la
+  compilación funciona, pero las pruebas que usan Mockito fallan: la versión de Byte Buddy que trae
+  Spring Boot 3.3.5 no conoce Java 24 ni 25 (`Java 25 (69) is not supported by the current version
+  of Byte Buddy`).
+- Maven. Comprobar con `mvn -v` que la línea `Java version` diga 21; si no, apuntar `JAVA_HOME` al
+  JDK 21.
+- En IntelliJ: File → Project Structure → Project → SDK 21.
 
 ## Contrato (contract-first)
 
@@ -53,8 +63,46 @@ http://localhost:8083/swagger-ui.html
 ```
 
 El puerto sale de `SYNC_PORT` (8083 por defecto). El contrato en bruto está en
-`http://localhost:8083/openapi/sync-api.yaml`. Todavía no hay controladores: Swagger UI muestra
-el contrato, pero probar los endpoints desde ahí dará 404 hasta las HU-53 y HU-57.
+`http://localhost:8083/openapi/sync-api.yaml`. Desde Swagger UI se puede probar
+`POST /api/sync/resumen` (HU-53): pulsa **Authorize**, escribe la API key y luego **Try it out**.
+`GET /api/sync/jobs/{jobId}` responde `501` hasta la HU-57.
+
+## Probar Generate (HU-53)
+
+Los endpoints exigen la cabecera `X-API-Key`. El servicio la compara con la variable de entorno
+`SYNC_API_KEY`; **si no está definida, rechaza todo con 401**.
+
+```powershell
+cd sync-service
+$env:SYNC_API_KEY="mi-clave-local"
+java -jar target\sync-service-0.0.1-SNAPSHOT.jar
+```
+
+(En IntelliJ: Run → Edit Configurations → `SyncApplication` → Environment variables → `SYNC_API_KEY=mi-clave-local`.)
+
+En otra terminal:
+
+```powershell
+# Con la clave: 202 Accepted, cabecera Location y el jobId
+curl.exe -i -X POST http://localhost:8083/api/sync/resumen -H "X-API-Key: mi-clave-local"
+
+# Sin la clave o con otra: 401 NO_AUTORIZADO
+curl.exe -i -X POST http://localhost:8083/api/sync/resumen
+
+# Cuánto tarda en responder (debe ser menos de un segundo)
+Measure-Command { curl.exe -s -o NUL -X POST http://localhost:8083/api/sync/resumen -H "X-API-Key: mi-clave-local" }
+```
+
+Cómo funciona:
+
+- `SyncController` implementa `SincronizacionApi` y llama a `GenerarJob`.
+- `GenerarJob` crea el `Job` en estado `PENDIENTE`, lo guarda en `JobRepositorio` (en memoria) y lo
+  entrega al **Thread de segundo plano** (un solo hilo, `sync-thread`, así las replicaciones se
+  hacen una tras otra). Responde sin esperar.
+- Por ahora el Thread usa `ProcesadorJobProvisional`, que solo deja un mensaje en el log y el job
+  queda `PENDIENTE`. La HU-54 lo reemplaza por el que cambia los estados.
+- `GET /api/sync/jobs/{jobId}` todavía responde `501`; se implementa en la HU-57.
+- Los jobs viven en memoria: se pierden al reiniciar el servicio.
 
 Estructura:
 
