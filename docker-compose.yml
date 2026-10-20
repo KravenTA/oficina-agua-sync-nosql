@@ -1,11 +1,49 @@
 # docker-compose.yml — Feature 4: Replicación Asíncrona a NoSQL
 #
-# HU-50: archivo inicial, sin servicios todavía.
-# Se completa en las siguientes HU con:
-#   - mysql-origen : instancia MySQL de solo lectura, origen de los datos (HU-55)
-#   - dynamodb     : Amazon DynamoDB Local con su tabla de resumen (HU-52)
-#   - sync-service : endpoints Generate y GetJob, GenerarJob y Thread (HU-51, 53, 54, 55, 56, 57)
+# Servicios (se van sumando por HU):
+#   - dynamodb      : Amazon DynamoDB Local, destino de la replicación (HU-52)
+#   - dynamodb-init : crea la tabla de resumen al levantar y termina (HU-52)
+#   - mysql-origen  : instancia MySQL de solo lectura, origen de los datos (HU-55)
+#   - sync-service  : endpoints Generate y GetJob, GenerarJob y Thread (HU-53 a HU-57)
 #
-# Las variables se leen del archivo .env (ver .env.example).
+# Las variables se leen del archivo .env (ver .env.example). Si no existe, se usan los
+# valores por defecto de cada ${VARIABLE:-valor}.
 
-services: {}
+name: oficina-agua-sync-nosql
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: sync-dynamodb
+    # -sharedDb: una sola base para todas las credenciales y regiones.
+    # -dbPath: guarda los datos en disco para que sobrevivan a un reinicio (volumen dynamodb-data).
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    # Solo para desarrollo local: el volumen nombrado se crea con dueño root y el usuario por
+    # defecto de la imagen no podría escribir en él.
+    user: root
+    ports:
+      - "${DYNAMODB_HOST_PORT:-8000}:8000"
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    restart: unless-stopped
+
+  # Contenedor de un solo uso: espera a DynamoDB, crea la tabla si no existe y termina.
+  dynamodb-init:
+    image: amazon/aws-cli:latest
+    container_name: sync-dynamodb-init
+    depends_on:
+      - dynamodb
+    entrypoint: ["/bin/sh", "/init/crear-tabla.sh"]
+    environment:
+      DYNAMODB_ENDPOINT: http://dynamodb:8000
+      DYNAMODB_TABLE_RESUMEN: ${DYNAMODB_TABLE_RESUMEN:-oficina_agua_resumen}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local}
+      AWS_PAGER: ""
+    volumes:
+      - ./dynamodb/crear-tabla.sh:/init/crear-tabla.sh:ro
+    restart: "no"
+
+volumes:
+  dynamodb-data:

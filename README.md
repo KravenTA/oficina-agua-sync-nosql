@@ -60,8 +60,8 @@ El diagrama completo de la Fase 2 está en [`docs/arquitectura-fase2.png`](docs/
 
 ## Cómo levantarla
 
-> **Estado:** estructura inicial (HU-50). El `docker-compose.yml` todavía no define servicios; se
-> completa en las siguientes HU. Estos pasos quedarán válidos al terminar la HU-52 y la HU-53.
+> **Estado:** hasta ahora el `docker compose up` levanta el destino DynamoDB Local con su tabla
+> de resumen (HU-52). Los demás servicios se suman en las siguientes HU.
 
 Requisitos: Docker y Docker Compose, Git.
 
@@ -69,7 +69,7 @@ Requisitos: Docker y Docker Compose, Git.
 git clone https://github.com/KravenTA/oficina-agua-sync-nosql.git
 cd oficina-agua-sync-nosql
 cp .env.example .env        # ajustar valores (nunca subir el .env)
-docker compose up --build   # disponible a partir de las HU-52 y HU-53
+docker compose up --build   # levanta DynamoDB Local y crea la tabla (HU-52)
 ```
 
 Swagger UI del sync-service (disponible desde HU-51): `http://localhost:<SYNC_PORT>/swagger-ui.html`
