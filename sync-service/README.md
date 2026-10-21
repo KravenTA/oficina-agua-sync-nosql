@@ -162,8 +162,12 @@ en el destino en DynamoDB.*
 
 ### Probarla en local
 
+La forma más simple es con todo en Docker, desde la raíz: `docker compose up -d --build` (ver el
+README principal). Para correr el servicio fuera de Docker, con JDK 21, primero detener el
+contenedor (`docker compose stop sync-service`) y luego:
+
 ```powershell
-docker compose up -d            # DynamoDB Local, su tabla y la instancia MySQL de origen
+docker compose up -d dynamodb dynamodb-init mysql-origen   # solo las bases, sin el servicio
 cd sync-service
 mvn clean package
 $env:SYNC_API_KEY="mi-clave-local"

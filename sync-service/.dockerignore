@@ -1,0 +1,5 @@
+# Solo entran a la imagen el pom, el contrato y el código fuente.
+target/
+.idea/
+*.iml
+*.log

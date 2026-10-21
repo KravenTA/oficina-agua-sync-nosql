@@ -60,20 +60,39 @@ El diagrama completo de la Fase 2 está en [`docs/arquitectura-fase2.png`](docs/
 
 ## Cómo levantarla
 
-> **Estado:** el `docker compose up` levanta el destino DynamoDB Local con su tabla de resumen
-> (HU-52) y la instancia MySQL de origen con su usuario de solo lectura (HU-55). El sync-service
-> se ejecuta aparte; ver [`sync-service/README.md`](sync-service/README.md).
+Requisitos: Docker Desktop y Git. **No hace falta tener Java ni Maven**: el sync-service se compila
+dentro de Docker.
 
-Requisitos: Docker y Docker Compose, Git.
-
-```bash
+```powershell
 git clone https://github.com/KravenTA/oficina-agua-sync-nosql.git
 cd oficina-agua-sync-nosql
-cp .env.example .env        # ajustar valores (nunca subir el .env)
-docker compose up --build   # levanta DynamoDB Local y crea la tabla (HU-52)
+copy .env.example .env          # ajustar valores (nunca subir el .env)
+docker compose up -d --build
 ```
 
-Swagger UI del sync-service (disponible desde HU-51): `http://localhost:<SYNC_PORT>/swagger-ui.html`
+Levanta DynamoDB Local con su tabla de resumen (HU-52), la instancia MySQL de origen con su usuario
+de solo lectura (HU-55) y el sync-service en el puerto `SYNC_PORT` (8083). La primera vez tarda unos
+minutos: descarga las imágenes y compila el servicio.
+
+Probarlo (la API key es la de `SYNC_API_KEY` en tu `.env`):
+
+```powershell
+curl.exe -i -X POST http://localhost:8083/api/sync/resumen -H "X-API-Key: cambiar_esta_api_key"
+curl.exe -s http://localhost:8083/api/sync/jobs/<jobId> -H "X-API-Key: cambiar_esta_api_key"
+```
+
+El primero responde `202` con el `jobId` (la ruta para consultarlo viene en la cabecera
+`Location`); el segundo devuelve el estado del job y, al terminar, los conteos por tipo de dato.
+
+| Qué | Dónde |
+|---|---|
+| Swagger UI | `http://localhost:8083/swagger-ui.html` |
+| Logs del servicio | `docker compose logs -f sync-service` |
+| Detener todo | `docker compose down` |
+| Empezar de cero (borra los datos) | `docker compose down -v` |
+
+Para desarrollar el servicio fuera de Docker (con JDK 21 y Maven), ver
+[`sync-service/README.md`](sync-service/README.md).
 
 ## Flujo de trabajo del equipo
 
