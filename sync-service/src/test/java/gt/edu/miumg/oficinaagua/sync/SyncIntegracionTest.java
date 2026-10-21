@@ -89,6 +89,24 @@ class SyncIntegracionTest {
     }
 
     @Test
+    void elJobCreadoSePuedeConsultarEnLaRutaDeLocation() throws Exception {
+        String ruta = mvc.perform(post(RUTA).header("X-API-Key", API_KEY))
+                .andExpect(status().isAccepted())
+                .andReturn().getResponse().getHeader("Location");
+
+        mvc.perform(get(ruta).header("X-API-Key", API_KEY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").exists());
+    }
+
+    @Test
+    void consultarUnJobQueNoExisteResponde404() throws Exception {
+        mvc.perform(get("/api/sync/jobs/3f2b8c1e-5d4a-4b7e-9c61-0a1d2e3f4a5b").header("X-API-Key", API_KEY))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("JOB_NO_ENCONTRADO"));
+    }
+
+    @Test
     void elContratoYSwaggerUiNoPidenApiKey() throws Exception {
         mvc.perform(get("/openapi/sync-api.yaml")).andExpect(status().isOk());
     }
