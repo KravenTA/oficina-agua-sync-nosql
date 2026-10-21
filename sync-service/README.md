@@ -9,7 +9,7 @@ Servicio que replica el resumen de la instancia MySQL (solo lectura) hacia Amazo
 | HU-54 | Thread en segundo plano y estados del job (implementado) |
 | HU-55 | Diff entre la instancia MySQL y DynamoDB (nuevos, modificados, iguales) (implementado) |
 | HU-56 | Upsert sin borrar en DynamoDB (implementado) |
-| HU-57 | `GET /api/sync/jobs/{jobId}` (GetJob) |
+| HU-57 | `GET /api/sync/jobs/{jobId}` (GetJob) (implementado) |
 
 ## Requisitos
 
@@ -64,8 +64,8 @@ http://localhost:8083/swagger-ui.html
 
 El puerto sale de `SYNC_PORT` (8083 por defecto). El contrato en bruto está en
 `http://localhost:8083/openapi/sync-api.yaml`. Desde Swagger UI se puede probar
-`POST /api/sync/resumen` (HU-53): pulsa **Authorize**, escribe la API key y luego **Try it out**.
-`GET /api/sync/jobs/{jobId}` responde `501` hasta la HU-57.
+`POST /api/sync/resumen` (HU-53) y `GET /api/sync/jobs/{jobId}` (HU-57): pulsa **Authorize**,
+escribe la API key y luego **Try it out**.
 
 ## Probar Generate (HU-53)
 
@@ -119,11 +119,9 @@ Cómo funciona:
   mensaje es el motivo (debe ser legible y sin URLs, usuarios ni SQL). Cualquier otra excepción deja
   el motivo genérico "Error inesperado durante la replicación." y el detalle solo va al log.
 - Un solo Thread: los jobs se procesan uno tras otro, nunca dos a la vez.
-- Por ahora el `Replicador` es `ReplicadorProvisional`, que no hace nada: todo job termina
-  `COMPLETADO`. Las HU-55 (diff) y HU-56 (upsert) lo reemplazan. Mientras `GET /api/sync/jobs/{jobId}`
-  no exista (HU-57), los cambios de estado se ven en el log del servicio.
+- El `Replicador` es `ReplicadorResumen` (HU-55 y HU-56, ver más abajo). Los cambios de estado se
+  ven en el log del servicio y con `GET /api/sync/jobs/{jobId}` (HU-57).
 
-- `GET /api/sync/jobs/{jobId}` todavía responde `501`; se implementa en la HU-57.
 - Los jobs viven en memoria: se pierden al reiniciar el servicio.
 
 Estructura:
@@ -181,3 +179,18 @@ curl.exe -i -X POST http://localhost:8083/api/sync/resumen -H "X-API-Key: mi-cla
 
 En el log debe aparecer, por ejemplo, `CLIENTE: 25 insertados, 0 actualizados, 0 sin cambios` y
 el job `COMPLETADO`. Si se repite, todo queda en `sin cambios`.
+
+## Consultar un job (HU-57)
+
+`GET /api/sync/jobs/{jobId}` devuelve el estado del job. Según en qué punto va, agrega
+`iniciadoEn` (desde `EN_PROGRESO`), `finalizadoEn`, `registros` y `detalle` (en `COMPLETADO`) o
+`motivoFallo` (en `FALLIDO`); los campos que todavía no aplican no vienen en la respuesta.
+
+```powershell
+curl.exe -s http://localhost:8083/api/sync/jobs/<jobId> -H "X-API-Key: mi-clave-local"
+```
+
+La ruta exacta viene en la cabecera `Location` de la respuesta de Generate. Errores: `400
+JOB_ID_INVALIDO` si el jobId no es un UUID y `404 JOB_NO_ENCONTRADO` si no existe (los jobs viven
+en memoria: se pierden al reiniciar el servicio).
+

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import gt.edu.miumg.oficinaagua.sync.api.model.CodigoError;
 import gt.edu.miumg.oficinaagua.sync.api.model.ErrorRespuesta;
@@ -20,11 +21,16 @@ public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
-    /** Temporal: GetJob se implementa en la HU-57. */
-    @ExceptionHandler(UnsupportedOperationException.class)
-    public ResponseEntity<ErrorRespuesta> noDisponible(UnsupportedOperationException ex) {
-        return error(HttpStatus.NOT_IMPLEMENTED, CodigoError.ERROR_INTERNO,
-                "Esta operación todavía no está disponible.");
+    /** GetJob con un jobId que no tiene formato de UUID. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorRespuesta> jobIdInvalido(MethodArgumentTypeMismatchException ex) {
+        return error(HttpStatus.BAD_REQUEST, CodigoError.JOB_ID_INVALIDO, "El jobId debe ser un UUID.");
+    }
+
+    /** GetJob con un jobId que no existe. */
+    @ExceptionHandler(JobNoEncontradoException.class)
+    public ResponseEntity<ErrorRespuesta> jobNoEncontrado(JobNoEncontradoException ex) {
+        return error(HttpStatus.NOT_FOUND, CodigoError.JOB_NO_ENCONTRADO, "No se encontró un job con ese jobId.");
     }
 
     @ExceptionHandler(RuntimeException.class)
