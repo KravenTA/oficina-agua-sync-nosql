@@ -7,8 +7,8 @@ Servicio que replica el resumen de la instancia MySQL (solo lectura) hacia Amazo
 | HU-51 | Contrato OpenAPI (`openapi/`), generación de interfaces y DTOs, Swagger UI (implementado) |
 | HU-53 | `POST /api/sync/resumen` (Generate) y creación del GenerarJob, respuesta 202 + `jobId`, API key (implementado) |
 | HU-54 | Thread en segundo plano y estados del job (implementado) |
-| HU-55 | Diff entre la instancia MySQL y DynamoDB (nuevos, modificados, iguales) |
-| HU-56 | Upsert sin borrar en DynamoDB |
+| HU-55 | Diff entre la instancia MySQL y DynamoDB (nuevos, modificados, iguales) (implementado) |
+| HU-56 | Upsert sin borrar en DynamoDB (implementado) |
 | HU-57 | `GET /api/sync/jobs/{jobId}` (GetJob) |
 
 ## Requisitos
@@ -135,3 +135,49 @@ sync-service/
 ├── pom.xml
 └── Dockerfile          (se agrega al armar el docker-compose)
 ```
+
+## Replicación (HU-55 y HU-56)
+
+`ReplicadorResumen` implementa la interfaz `Replicador`. Por cada tipo de dato (clientes, consumos
+y pagos):
+
+1. **Lee el origen** (`OrigenMySql`): consulta la instancia MySQL con el usuario de solo lectura.
+   Solo trae los campos del resumen; nunca DPI, NIT, teléfono, correo ni documentos del cliente.
+   Además, las conexiones se marcan como de solo lectura (`spring.datasource.hikari.read-only`).
+2. **Lee las huellas del destino** (`DestinoDynamoDb.hashes`): un `Query` por `entidad`.
+3. **Calcula la diferencia** (`Diferencia`): cada registro tiene una huella SHA-256 de sus datos.
+   Si el id no está en el destino es **nuevo**; si la huella cambió, **modificado**; si es la misma,
+   **igual** y no se escribe.
+4. **Aplica los upserts** (`DestinoDynamoDb.upsert`): escribe los registros nuevos y modificados
+   con `BatchWriteItem` (`PutRequest`), en lotes de hasta 25. Si DynamoDB deja registros sin
+   escribir (`UnprocessedItems`), los reintenta con espera progresiva, hasta 5 intentos por lote.
+   No existe ninguna operación para borrar: un registro que desapareció del origen se queda en
+   DynamoDB.
+
+Devuelve los conteos (insertados, actualizados y sin cambios por tipo de dato), que el job guarda
+para GetJob (HU-57). Ejecutar la replicación dos veces seguidas da el mismo resultado: la segunda
+encuentra todo igual y no escribe nada.
+
+Si falla, el job queda `FALLIDO` con un motivo sin detalles internos: *No se pudo leer la
+instancia MySQL de origen.*, *No se pudo consultar el destino en DynamoDB.* o *No se pudo escribir
+en el destino en DynamoDB.*
+
+### Probarla en local
+
+```powershell
+docker compose up -d            # DynamoDB Local, su tabla y la instancia MySQL de origen
+cd sync-service
+mvn clean package
+$env:SYNC_API_KEY="mi-clave-local"
+$env:ORIGEN_DB_PASSWORD="cambiar_esta_password"   # la de ORIGEN_DB_PASSWORD en tu .env
+java -jar target\sync-service-0.0.1-SNAPSHOT.jar
+```
+
+En otra ventana:
+
+```powershell
+curl.exe -i -X POST http://localhost:8083/api/sync/resumen -H "X-API-Key: mi-clave-local"
+```
+
+En el log debe aparecer, por ejemplo, `CLIENTE: 25 insertados, 0 actualizados, 0 sin cambios` y
+el job `COMPLETADO`. Si se repite, todo queda en `sin cambios`.

@@ -37,9 +37,11 @@ public class ProcesadorReplicacion implements ProcesadorJob {
         log.info("Job {}: PENDIENTE -> EN_PROGRESO", job.getId());
 
         try {
-            replicador.replicar();
-            job.completar(ahora());
-            log.info("Job {}: EN_PROGRESO -> COMPLETADO", job.getId());
+            ResultadoReplicacion resultado = replicador.replicar();
+            job.completar(ahora(), resultado);
+            Conteo total = resultado.total();
+            log.info("Job {}: EN_PROGRESO -> COMPLETADO ({} insertados, {} actualizados, {} sin cambios)",
+                    job.getId(), total.insertados(), total.actualizados(), total.sinCambios());
         } catch (ReplicacionException ex) {
             log.warn("Job {}: EN_PROGRESO -> FALLIDO ({})", job.getId(), ex.getMessage(), ex);
             job.fallar(ahora(), ex.getMessage());

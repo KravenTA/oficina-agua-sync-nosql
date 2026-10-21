@@ -22,6 +22,7 @@ public class Job {
     private volatile OffsetDateTime iniciadoEn;
     private volatile OffsetDateTime finalizadoEn;
     private volatile String motivoFallo;
+    private volatile ResultadoReplicacion resultado;
 
     public Job(UUID id, OffsetDateTime creadoEn) {
         this.id = id;
@@ -55,6 +56,11 @@ public class Job {
         return motivoFallo;
     }
 
+    /** Los conteos de la replicación; null mientras no haya terminado con éxito. */
+    public ResultadoReplicacion getResultado() {
+        return resultado;
+    }
+
     /** PENDIENTE → EN_PROGRESO. */
     public synchronized void iniciar(OffsetDateTime instante) {
         exigirEstado(EstadoJob.PENDIENTE, "iniciar");
@@ -62,9 +68,15 @@ public class Job {
         this.estado = EstadoJob.EN_PROGRESO;
     }
 
-    /** EN_PROGRESO → COMPLETADO. */
-    public synchronized void completar(OffsetDateTime instante) {
+    /** EN_PROGRESO → COMPLETADO, sin conteos. */
+    public void completar(OffsetDateTime instante) {
+        completar(instante, ResultadoReplicacion.VACIO);
+    }
+
+    /** EN_PROGRESO → COMPLETADO, con los conteos de la replicación. */
+    public synchronized void completar(OffsetDateTime instante, ResultadoReplicacion resultado) {
         exigirEstado(EstadoJob.EN_PROGRESO, "completar");
+        this.resultado = resultado;
         this.finalizadoEn = instante;
         this.estado = EstadoJob.COMPLETADO;
     }

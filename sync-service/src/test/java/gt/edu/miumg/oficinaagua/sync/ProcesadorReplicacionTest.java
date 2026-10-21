@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -33,7 +34,10 @@ class ProcesadorReplicacionTest {
     void unaReplicacionExitosaDejaElJobCompletado() {
         Job job = nuevoJob();
         AtomicReference<EstadoJob> estadoDuranteLaReplicacion = new AtomicReference<>();
-        Replicador replicador = () -> estadoDuranteLaReplicacion.set(job.getEstado());
+        Replicador replicador = () -> {
+            estadoDuranteLaReplicacion.set(job.getEstado());
+            return ResultadoReplicacion.VACIO;
+        };
 
         con(replicador).procesar(job);
 
@@ -42,6 +46,20 @@ class ProcesadorReplicacionTest {
         assertThat(job.getIniciadoEn()).isEqualTo(AHORA);
         assertThat(job.getFinalizadoEn()).isEqualTo(AHORA);
         assertThat(job.getMotivoFallo()).isNull();
+    }
+
+    @Test
+    void elJobCompletadoGuardaLosConteosDeLaReplicacion() {
+        Job job = nuevoJob();
+        ResultadoReplicacion resultado = new ResultadoReplicacion(Map.of(
+                Entidad.CLIENTE, new Conteo(2, 1, 22),
+                Entidad.PAGO, new Conteo(4, 0, 0)));
+
+        con(() -> resultado).procesar(job);
+
+        assertThat(job.getEstado()).isEqualTo(EstadoJob.COMPLETADO);
+        assertThat(job.getResultado().de(Entidad.CLIENTE)).isEqualTo(new Conteo(2, 1, 22));
+        assertThat(job.getResultado().total()).isEqualTo(new Conteo(6, 1, 22));
     }
 
     @Test
