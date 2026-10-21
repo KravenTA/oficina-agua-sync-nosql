@@ -52,6 +52,7 @@ El diagrama completo de la Fase 2 está en [`docs/arquitectura-fase2.png`](docs/
 ├── db/origen/            Instancia MySQL de origen: usuario de solo lectura y datos — HU-55
 ├── dynamodb/             Amazon DynamoDB Local y creación de la tabla de resumen — HU-52
 ├── docs/                 Diagramas y evidencia de pruebas — HU-58
+├── pruebas/              Pruebas de integración con Docker Compose — HU-58
 ├── .github/              Plantilla de pull request
 ├── docker-compose.yml    Orquestación de la feature
 ├── .env.example          Variables de entorno (copiar a .env)
@@ -93,6 +94,17 @@ El primero responde `202` con el `jobId` (la ruta para consultarlo viene en la c
 
 Para desarrollar el servicio fuera de Docker (con JDK 21 y Maven), ver
 [`sync-service/README.md`](sync-service/README.md).
+
+## Pruebas de integración (HU-58)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\pruebas\integracion.ps1
+```
+
+Levanta la feature desde cero con Docker Compose (**borra los datos locales**) y comprueba de punta a
+punta: destino vacío, repetición sin cambios, cambios parciales, que nunca borra, fallo del destino
+(DynamoDB caído) con recuperación y que no se replican datos sensibles. Guarda la evidencia en
+[`docs/evidencias/`](docs/evidencias/). Solo necesita Docker Desktop y tarda unos minutos.
 
 ## Flujo de trabajo del equipo
 
