@@ -6,7 +6,7 @@ Servicio que replica el resumen de la instancia MySQL (solo lectura) hacia Amazo
 |---|---|
 | HU-51 | Contrato OpenAPI (`openapi/`), generación de interfaces y DTOs, Swagger UI (implementado) |
 | HU-53 | `POST /api/sync/resumen` (Generate) y creación del GenerarJob, respuesta 202 + `jobId`, API key (implementado) |
-| HU-54 | Thread en segundo plano y estados del job |
+| HU-54 | Thread en segundo plano y estados del job (implementado) |
 | HU-55 | Diff entre la instancia MySQL y DynamoDB (nuevos, modificados, iguales) |
 | HU-56 | Upsert sin borrar en DynamoDB |
 | HU-57 | `GET /api/sync/jobs/{jobId}` (GetJob) |
@@ -99,8 +99,30 @@ Cómo funciona:
 - `GenerarJob` crea el `Job` en estado `PENDIENTE`, lo guarda en `JobRepositorio` (en memoria) y lo
   entrega al **Thread de segundo plano** (un solo hilo, `sync-thread`, así las replicaciones se
   hacen una tras otra). Responde sin esperar.
-- Por ahora el Thread usa `ProcesadorJobProvisional`, que solo deja un mensaje en el log y el job
-  queda `PENDIENTE`. La HU-54 lo reemplaza por el que cambia los estados.
+- El Thread usa `ProcesadorReplicacion`, que lleva el job por sus estados (ver abajo) y ejecuta la
+  replicación a través de la interfaz `Replicador`.
+### Estados del job (HU-54)
+
+`ProcesadorReplicacion` es lo que hace el Thread con cada job:
+
+| Paso | Qué pasa | Estado del job |
+|---|---|---|
+| 1 | El Thread toma el job y anota `iniciadoEn` | `PENDIENTE` → `EN_PROGRESO` |
+| 2 | Ejecuta `Replicador.replicar()` | `EN_PROGRESO` |
+| 3a | Terminó bien: anota `finalizadoEn` | `COMPLETADO` |
+| 3b | Falló: anota `finalizadoEn` y `motivoFallo` | `FALLIDO` |
+
+- Un job solo puede avanzar en ese orden; cualquier otro cambio lanza `IllegalStateException`.
+- **Un fallo no tumba al Thread:** el procesador atrapa todo, así el siguiente job se procesa
+  normalmente. Tampoco afecta a la instancia MySQL: la replicación solo lee de ella.
+- **El motivo no revela detalles internos.** Si el `Replicador` lanza `ReplicacionException`, su
+  mensaje es el motivo (debe ser legible y sin URLs, usuarios ni SQL). Cualquier otra excepción deja
+  el motivo genérico "Error inesperado durante la replicación." y el detalle solo va al log.
+- Un solo Thread: los jobs se procesan uno tras otro, nunca dos a la vez.
+- Por ahora el `Replicador` es `ReplicadorProvisional`, que no hace nada: todo job termina
+  `COMPLETADO`. Las HU-55 (diff) y HU-56 (upsert) lo reemplazan. Mientras `GET /api/sync/jobs/{jobId}`
+  no exista (HU-57), los cambios de estado se ven en el log del servicio.
+
 - `GET /api/sync/jobs/{jobId}` todavía responde `501`; se implementa en la HU-57.
 - Los jobs viven en memoria: se pierden al reiniciar el servicio.
 
