@@ -41,7 +41,10 @@ class FlujoJobTest {
     @Test
     void elJobPasaPorEnProgresoYTerminaCompletado() throws Exception {
         CountDownLatch liberar = new CountDownLatch(1);
-        GenerarJob generarJob = generarCon(() -> liberar.await());
+        GenerarJob generarJob = generarCon(() -> {
+            liberar.await();
+            return ResultadoReplicacion.VACIO;
+        });
 
         Job job = generarJob.generar();
 
@@ -76,6 +79,7 @@ class FlujoJobTest {
             if (llamadas.incrementAndGet() == 1) {
                 throw new IllegalStateException("fallo simulado");
             }
+            return ResultadoReplicacion.VACIO;
         });
 
         Job primero = generarJob.generar();
@@ -93,6 +97,7 @@ class FlujoJobTest {
             if (llamadas.incrementAndGet() == 1) {
                 liberarPrimero.await();
             }
+            return ResultadoReplicacion.VACIO;
         });
 
         Job primero = generarJob.generar();

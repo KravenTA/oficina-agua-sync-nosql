@@ -19,9 +19,18 @@ tipos de dato que se replican.
 
 - `CLIENTE` sale de la tabla `clientes`, `CONSUMO` de `lecturas` y `PAGO` de `pagos`.
 - Con esta clave, traer todos los registros de un tipo es un solo `Query` por `entidad`, que es lo
-  que necesita el diff de la HU-55. Un upsert (HU-56) es un `PutItem` con la misma clave.
-- Los demás atributos (los datos del registro, un `hash` para detectar cambios y la fecha de
-  replicación) no se declaran: DynamoDB no los exige. Se definen cuando se implementen las HU-55 y 56.
+  que necesita el diff de la HU-55. Un upsert (HU-56) es un `PutRequest` con la misma clave, enviado en lotes con `BatchWriteItem`.
+- Los demás atributos no se declaran en la tabla (DynamoDB no lo exige). La replicación (HU-55 y
+  HU-56) guarda en cada registro sus datos, `hash` (huella SHA-256 de los datos, para detectar
+  cambios) y `replicadoEn` (fecha de la última escritura).
+
+| Entidad | Atributos |
+|---|---|
+| `CLIENTE` | `nombre`, `direccion`, `activo` |
+| `CONSUMO` | `clienteId`, `contador`, `periodo` (AAAA-MM), `lecturaAnterior`, `lecturaActual`, `consumo`, `monto`, `fechaLectura` |
+| `PAGO` | `clienteId`, `lecturaId`, `recibo`, `monto`, `fechaPago`, `metodo` |
+
+No se replican datos sensibles del cliente: DPI, NIT, teléfono, correo ni documentos.
 - Modo de facturación `PAY_PER_REQUEST`, sin capacidad que configurar.
 
 ## Probarlo

@@ -45,5 +45,29 @@ services:
       - ./dynamodb/crear-tabla.sh:/init/crear-tabla.sh:ro
     restart: "no"
 
+  # HU-55: instancia MySQL de origen. Se carga con el esquema y los datos del monolito
+  # (db/origen/01) y crea el usuario de solo lectura del sync-service (db/origen/03).
+  # Los scripts solo corren la primera vez; para recargarlos: docker compose down -v
+  mysql-origen:
+    image: mysql:8.4
+    container_name: sync-mysql-origen
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ORIGEN_DB_ROOT_PASSWORD:-cambiar_esta_password_root}
+      MYSQL_DATABASE: ${ORIGEN_DB_NAME:-oficina_agua}
+      ORIGEN_DB_USER: ${ORIGEN_DB_USER:-sync_ro}
+      ORIGEN_DB_PASSWORD: ${ORIGEN_DB_PASSWORD:-cambiar_esta_password}
+    ports:
+      - "${ORIGEN_DB_HOST_PORT:-3308}:3306"
+    volumes:
+      - ./db/origen:/docker-entrypoint-initdb.d:ro
+      - mysql-origen-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${ORIGEN_DB_ROOT_PASSWORD:-cambiar_esta_password_root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   dynamodb-data:
+  mysql-origen-data:

@@ -60,8 +60,9 @@ El diagrama completo de la Fase 2 está en [`docs/arquitectura-fase2.png`](docs/
 
 ## Cómo levantarla
 
-> **Estado:** hasta ahora el `docker compose up` levanta el destino DynamoDB Local con su tabla
-> de resumen (HU-52). Los demás servicios se suman en las siguientes HU.
+> **Estado:** el `docker compose up` levanta el destino DynamoDB Local con su tabla de resumen
+> (HU-52) y la instancia MySQL de origen con su usuario de solo lectura (HU-55). El sync-service
+> se ejecuta aparte; ver [`sync-service/README.md`](sync-service/README.md).
 
 Requisitos: Docker y Docker Compose, Git.
 
